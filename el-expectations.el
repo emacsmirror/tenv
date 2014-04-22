@@ -362,12 +362,15 @@ Example:
   "Execute last-defined `expectations' test.
 With prefix argument, do `batch-expectations-in-emacs'."
   (interactive)
-  (setq exps-last-error-position nil)
-  (if current-prefix-arg
-      (batch-expectations-in-emacs)
-    (exps-display
-     (mapcar 'exps-execute-test (or testcase exps-last-testcase))))
-  (exps-cleanup))
+  (let (success)
+    (setq exps-last-error-position nil)
+    (if current-prefix-arg
+        (batch-expectations-in-emacs)
+      (setq success
+            (exps-display
+             (mapcar 'exps-execute-test (or testcase exps-last-testcase)))))
+    (exps-cleanup)
+    success))
 
 ;;;; assertions
 (defvar exps-assert-functions
@@ -578,25 +581,30 @@ With prefix argument, do `batch-expectations-in-emacs'."
     (concat msg1 msg2)))
 
 (defun exps-display (results)
-  (with-current-buffer (get-buffer-create expectations-result-buffer)
-    (erase-buffer)
-    (exps-display-mode)
-    (insert (format "Executing expectations in %s...\n" exps-last-filename))
-    (insert "==== Failures and Errors ====\n")
-    (exps-insert-not-passes results)
-    (insert "\n"
-            "==== All Results ====\n")
-    (exps-insert-results results)
-    (insert "\n")
-    (exps-insert-counts results)
-    (display-buffer (current-buffer))))
+  (let (success)
+    (with-current-buffer (get-buffer-create expectations-result-buffer)
+      (erase-buffer)
+      (exps-display-mode)
+      (insert (format "Executing expectations in %s...\n" exps-last-filename))
+      (insert "==== Failures and Errors ====\n")
+      (setq success (exps-insert-not-passes results))
+      (insert "\n"
+              "==== All Results ====\n")
+      (exps-insert-results results)
+      (insert "\n")
+      (exps-insert-counts results)
+      (display-buffer (current-buffer)))
+    success))
 
 (defun exps-insert-not-passes (results)
-  (destructuring-bind (pass fail error desc)
-      (exps-classify-results results)
-    (loop with xxx = (sort (append fail error) (lambda (a b) (< (car a) (car b))))
-          for (i . result) in xxx
-          do (insert (exps-insert-result i result)))))
+  (let ((success t))
+    (destructuring-bind (pass fail error desc)
+        (exps-classify-results results)
+      (loop with xxx = (sort (append fail error) (lambda (a b) (< (car a) (car b))))
+            for (i . result) in xxx
+            do (insert (exps-insert-result i result))
+            do (setq success nil)))
+    success))
 
 (defun exps-classify-results (results)
   (loop for result in results
@@ -789,10 +797,10 @@ If `expectations-execute-at-once' is non-nil, execute expectations if it is an e
       command-line-args-left
     (dolist (lispfile lispfiles)
       (load lispfile nil t))
-    (let ((fail-and-errors (expectations-execute)))
+    (let ((success (expectations-execute)))
       (with-current-buffer expectations-result-buffer
         (write-region (point-min) (point-max) output-file nil 'nodisp))
-      (kill-emacs fail-and-errors))))
+      (kill-emacs (if success 0 1)))))
 
 (defun batch-expectations-in-emacs ()
   "Execute expectations in current file with batch mode."
